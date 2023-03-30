@@ -1,0 +1,476 @@
+"""
+ENSAE OMI446 - Physique appliquée aux sciences sociales
+
+            COMPETITION BETWEEN COLLECTIVE AND INDIVIDUAL DYNAMICS
+
+by: Romane Le Potier, Enzo Guebli and Soline Mignot
+
+"""
+
+
+# MODEL
+
+"""
+We will represent the city by a list of Q lists of length H that represents the blocks. Each list representing the blocks will be filled
+with 0 if noone lives in that flat or 1 if someone does. This list will be named L.
+
+Let's start with a few preliminary functions that will help us for the other functions. 
+
+"""
+
+def density (L):   #This function returns a list of Q numbers which are the densities of each block
+    Q= len(L)
+    dens=[sum(L[i])/len(L[i]) for i in range (Q)]
+    return dens
+
+
+def indiv_utility(dens,m): # This function returns the individual utility felt when the density is 'dens'
+    # This function is given by the article on page 2
+    if dens<=1/2:
+        return 2*dens
+    return m+2*(1-m)*(1-dens)
+
+
+def collective_utility(L,m): # This function returns the collective utility of the city L
+    dens=density(L)
+    H= len(L[0])
+    answer=0
+    for i in range (len(L)):
+        answer+=H*dens[i]*indiv_utility(dens[i],m)
+    return answer
+
+
+
+# PROBABILITY OF MOVING
+
+def gain(L,m,alpha, start, end):
+    #let's make a new list representing the new city
+    new_city= L.copy()
+    a,b=start
+    c,d=end
+    new_city[a][b]=0
+    new_city[c][d]=1
+    #let's calculate the gain 
+    dens_L= sum(L[a])/len(L[a])
+    dens_new= sum(new_city[c])/len(new_city[c])
+    delta_u=abs(indiv_utility(dens_L,m)-indiv_utility(dens_new,m))
+    delta_U=abs(collective_utility(L,m)-collective_utility(new_city,m))
+    new_city[a][b]=1
+    new_city[c][d]=0
+    return( delta_u+ alpha*(delta_U -delta_u) )
+
+def moving_probability(L,m,alpha,T, start, end):
+    #we're calculating the probability of moving with the function from the article
+    import numpy as np
+    a,b=start
+    c,d=end
+    G=gain(L,m,alpha, start, end)
+    return (1/ (1 + np.exp(- G/T)))
+
+
+def moving_once(L,m,T,alpha):
+    """
+    This function will visit each person once and change the city if they move.
+    
+    How does it work?
+    1-We create a list of the coordinates of all the empty places.
+    2-We visit each person, pick a random empty spot and calculate the probability of them moving there.
+    3-We generate a random number in [0;1], if the probability is higher than that number, then the 
+        individual moves.
+    4-We remove from list empty the place now full and add the now empty place
+
+    """
+    Q= len(L)
+    H= len(L[0])
+    #step 1
+    empty=[]
+    import random as rd
+    for i in range (Q):
+        for j in range (H):
+            if L[i][j]==0:
+                empty.append((i,j))
+    #step2
+    for i in range (Q):
+        for j in range (H):
+            if len(empty)>0 and L[i][j]==1:
+                #step3
+                rand_empty=rd.randint(0,len(empty)-1)
+                empty_coordinates=empty[rand_empty]
+                prob=moving_probability(L, m, alpha, T,(i,j),empty_coordinates)
+                rand=rd.random()
+                #step3
+                if rand<=prob :
+                    #then, our individual moves
+                    L[i][j]=0
+                    L[empty_coordinates[0]][empty_coordinates[1]]=1
+                    #step 4
+                    empty.remove(empty_coordinates)
+                    empty.append((i,j))
+    return L
+
+def moving_n_times(L,m,T,alpha,n): #n is the number of times we want them to move 
+    """
+    This function will visit each person n times and change the city if they move.
+    
+    It works exactly the same way as the function before. However, here we visit 
+    each individual n times to see if they want to move. If we repeat a big enough
+    number of times, we'll reach the equilibrium.
+
+    """
+    Q= len(L)
+    H= len(L[0])
+    empty=[]
+    import random as rd
+    for i in range (Q):
+        for j in range (H):
+            if L[i][j]==0:
+                empty.append((i,j))
+    for x in range (n):
+        for i in range (Q):
+            for j in range (H):
+                if len(empty)>0 and L[i][j]==1:
+                    rand_empty=rd.randint(0,len(empty)-1)
+                    empty_coordinates=empty[rand_empty]
+                    prob=moving_probability(L, m, alpha, T,(i,j),empty_coordinates)
+                    rand=rd.random()
+                    if rand<=prob :
+                        #then, our individual moves
+                        L[i][j]=0
+                        L[empty_coordinates[0]][empty_coordinates[1]]=1
+                        empty.remove(empty_coordinates)
+                        empty.append((i,j))
+    return L
+
+
+# MAKING DIAGRAMS OF THE CITY
+
+def city(Q,H,prob): # creates a city of Q blocks with H places in each and where the probability for it to be occupied is 'prob'
+    import random as rd
+    answer=[[0 for j in range (H)] for i in range (Q)]
+    for i in range (Q):
+        for j in range (H):
+            if rd.random()<= prob:
+                answer[i][j]=1
+    return answer
+
+def diagram(L,height_Q,width_Q,height_L,width_L): 
+    # separates the city in Q blocks and makes them black if there is someone, white if there's noone
+    answer=[]
+    for h_Q in range (height_Q):
+        for h_L in range (height_L):
+            list=[]
+            for w_Q in range (width_Q):
+                for w_L in range (width_L):
+                    if L[w_Q+ int((len(L)*h_Q/height_Q)) ][ int((len(L[0])*h_L/height_L)) +w_L ]==0:
+                        list.append([255,255,255]) # the rgb for white
+                    else:
+                        list.append([0,0,0]) # the rgd for black
+            answer.append(list)
+    return answer
+
+def drawing(L,height_Q,width_Q,height_L,width_L): 
+    #this function draws the diagram once we're given the city list, to represent it
+    diag=diagram(L,height_Q,width_Q,height_L,width_L)
+    from PIL import Image
+    import numpy as np
+    img = Image.fromarray(np.array(diag).astype(np.uint8))
+    img.show()
+
+""" # these next lines allow us to have an example
+alpha=0
+m=0.5
+L=city(36,100,0.5)
+drawing(L,6,6,10,10)
+T=0.2
+moved=moving_n_times(L,m,T,alpha,1000)
+drawing(moved,6,6,10,10)
+
+"""
+
+# PART TWO - TWO COLOURS
+
+"""
+
+In this second part, we're gonna see a city in which there are two types of people:
+    the green and the red. And they each care only about their colors.
+
+So, in this part, we remake the same functions, but tweak them so they can accomodate
+the fact that there are two colours rather than one.
+
+0: there is noone
+1: the individual is red
+2: the individual is green
+
+In the tuples, we will always put the red before the green.
+
+"""
+
+def density2 (L): 
+    Q= len(L)
+    H= len(L[0])
+    dens=[(0,0)for i in range (Q)]
+    for i in range (Q):
+        red=0
+        green=0
+        for j in range (H):
+            if L[i][j]==1:
+                red+=1
+            elif L[i][j]==2:
+                green+=1
+        dens[i]=(red/H,green/H)
+    return dens
+
+
+def collective_utility_bis(L,m,color):
+    #color is 1 or 2 if individual is red or green
+    #Here, the only density that matters is the density in the block of the color of the individual 
+    dens=density2(L)
+    H= len(L[0])
+    answer=0
+    for i in range (len(L)):
+        answer+=H*dens[i][color-1]*indiv_utility(dens[i][color-1],m)
+    return answer
+
+
+
+# PROBABILITY OF MOVING
+
+def gain_bis(L,m,alpha, start, end,color):
+    #let's make a new list representing the new city
+    new_city= L.copy()
+    a,b=start
+    c,d=end
+    new_city[a][b]=0
+    new_city[c][d]=color
+    #let's calculate the gain 
+    dens_L=0
+    dens_new=0
+    for i in range (len(L[a])):
+        if L[a][i]==color-1:
+            dens_L+=1/len(L[a])
+        if new_city[c]==color-1:
+            dens_new+=1/len(new_city[c])
+    delta_u=abs(indiv_utility(dens_L,m)-indiv_utility(dens_new,m))
+    delta_U=abs(collective_utility_bis(L,m,color)-collective_utility_bis(new_city,m,color))
+    new_city[a][b]=color
+    new_city[c][d]=0
+    return( delta_u+ alpha*(delta_U -delta_u) )
+
+def moving_probability_bis(L,m,alpha,T, start, end,color):
+    import numpy as np
+    a,b=start
+    c,d=end
+    G=gain_bis(L,m,alpha, start, end,color)
+    return (1/ (1 + np.exp(- G/T)))
+
+
+def moving_once_bis(L,m,T,alpha): # If every occupant gets to move once 
+    Q= len(L)
+    H= len(L[0])
+    empty=[]
+    import random as rd
+    for i in range (Q):
+        for j in range (H):
+            if L[i][j]==0:
+                empty.append((i,j))
+    for i in range (Q):
+        for j in range (H):
+            if L[i][j]==1:
+                rand_empty=rd.randint(0,len(empty)-1)
+                empty_coordinates=empty[rand_empty]
+                prob=moving_probability_bis(L, m, alpha, T,(i,j),empty_coordinates,1)
+                rand=rd.random()
+                if rand<=prob :
+                    #then, our individual moves
+                    L[i][j]=0
+                    L[empty_coordinates[0]][empty_coordinates[1]]=1
+                    empty.remove(empty_coordinates)
+                    empty.append((i,j))
+            elif L[i][j]==2:
+                rand_empty=rd.randint(0,len(empty)-1)
+                empty_coordinates=empty[rand_empty]
+                prob=moving_probability_bis(L, m, alpha, T,(i,j),empty_coordinates,2)
+                rand=rd.random()
+                if rand<=prob :
+                    #then, our individual moves
+                    L[i][j]=0
+                    L[empty_coordinates[0]][empty_coordinates[1]]=2
+                    empty.remove(empty_coordinates)
+                    empty.append((i,j))
+    return L
+
+def moving_n_times_bis(L,m,T,alpha,n): #n is the number of times we want them to move 
+    Q= len(L)
+    H= len(L[0])
+    empty=[]
+    import random as rd
+    for i in range (Q):
+        for j in range (H):
+            if L[i][j]==0:
+                empty.append((i,j))
+    for x in range (n):
+        for i in range (Q):
+            for j in range (H):
+                if L[i][j]==1:
+                    rand_empty=rd.randint(0,len(empty)-1)
+                    empty_coordinates=empty[rand_empty]
+                    prob=moving_probability_bis(L, m, alpha, T,(i,j),empty_coordinates,1)
+                    rand=rd.random()
+                    if rand<=prob :
+                        #then, our individual moves
+                        L[i][j]=0
+                        L[empty_coordinates[0]][empty_coordinates[1]]=1
+                        empty.remove(empty_coordinates)
+                        empty.append((i,j))
+                elif L[i][j]==2:
+                    rand_empty=rd.randint(0,len(empty)-1)
+                    empty_coordinates=empty[rand_empty]
+                    prob=moving_probability_bis(L, m, alpha, T,(i,j),empty_coordinates,2)
+                    rand=rd.random()
+                    if rand<=prob :
+                        #then, our individual moves
+                        L[i][j]=0
+                        L[empty_coordinates[0]][empty_coordinates[1]]=2
+                        empty.remove(empty_coordinates)
+                        empty.append((i,j))
+    return L
+
+
+
+# MAKING DIAGRAMS OF THE CITY
+
+def city_bis(Q,H,prob_r,prob_g): # creates a city of Q blocks with H places in each and where the probability for it to be occupied is 'prob'
+    import random as rd
+    answer=[[0 for j in range (H)] for i in range (Q)]
+    for i in range (Q):
+        for j in range (H):
+            rand=rd.random()
+            if rand<= prob_r:
+                answer[i][j]=1
+            elif rand<= prob_r+prob_g:
+                answer[i][j]=2
+    return answer
+
+def diagram_bis(L,height_Q,width_Q,height_L,width_L): # separates the city in Q blocks and makes them black if there is someone, white if there's noone
+    answer=[]
+    for h_Q in range (height_Q):
+        for h_L in range (height_L):
+            list=[]
+            for w_Q in range (width_Q):
+                for w_L in range (width_L):
+                    if L[w_Q+ int((len(L)*h_Q/height_Q)) ][ int((len(L[0])*h_L/height_L)) +w_L ]==0:
+                        list.append([255,255,255]) # the rgb for white
+                    elif L[w_Q+ int((len(L)*h_Q/height_Q)) ][ int((len(L[0])*h_L/height_L)) +w_L ]==1:
+                        list.append([255,0,0]) # the rgd for black
+                    else: 
+                        list.append([0,128,0])
+            answer.append(list)
+    return answer
+
+def drawing_bis(L,height_Q,width_Q,height_L,width_L): #this function draws the diagram once we're given the city list, to represent it
+    diag=diagram_bis(L,height_Q,width_Q,height_L,width_L)
+    from PIL import Image
+    import numpy as np
+    img = Image.fromarray(np.array(diag).astype(np.uint8))
+    img.show()
+
+""" #Similarly, these next lines give us examples.
+alpha=0
+m=0.5
+L=city_bis(36,100,0.45,0.45)
+drawing_bis(L,6,6,10,10)
+T=0.2
+moved=moving_n_times_bis(L,m,T,alpha,100)
+drawing_bis(moved,6,6,10,10)
+
+"""
+
+
+
+# THE DIAGRAMS OF THE FUNCTIONS FOR THE PRESENTATION
+
+
+#For the density function.
+
+import numpy as np
+import scipy.integrate as integrate
+import matplotlib.pyplot as plt
+import scipy.optimize as opt
+from mpl_toolkits import mplot3d
+
+m=1/2     #for example
+T=0.2
+
+u=[]
+density_var= np.linspace(0,1,100)
+for d in density_var:
+    u.append(indiv_utility(d,m))
+
+plt.plot(density_var,u)
+plt.xlabel("density")
+plt.ylabel("u(density)")
+plt.title("Asymmetrically peaked individual utility as a function of block density for m=1/2")
+plt.show()
+
+
+
+def block_potential (dens,T,alpha): #f
+    answer=0
+    answer+= -T*dens*np.log(dens)- T*(1-dens)*np.log(1-dens)+ alpha*dens*indiv_utility_bis(dens)
+    answer+= integrate.quad(indiv_utility_bis, 0, dens)[0]
+    return answer
+
+def F(L,T,alpha):   #potential F
+    dens=density(L)
+    H= len(L[0])
+    answer=0
+    for i in range (len(L)):
+        answer+=H*block_potential(dens[i],T,alpha)
+    return answer
+
+#to integrate, we need it to have only one variable so we're gonna force m=1/2
+def indiv_utility_bis(dens):
+    if dens<=1/2:
+        return 2*dens
+    return 0.5+2*(0.5)*(1-dens)
+
+
+alpha= np.linspace(0,1,100)
+m= np.linspace(0,1,100)
+L=city(36,100,0.5)
+maxF= []
+for a in alpha:
+    for i in m :
+        maxF.append(opt.minimize(-F(L,T,alpha), 0, method = 'Nelder-Mead')) 
+
+fig = plt.figure()
+ 
+# syntax for 3-D projection
+ax = plt.axes(projection ='3d')
+
+# plotting
+ax.plot3D(m, alpha, maxF, 'green')
+ax.set_title('3D line plot geeks for geeks')
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
